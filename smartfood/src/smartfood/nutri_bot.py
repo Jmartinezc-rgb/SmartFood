@@ -10,7 +10,7 @@ Escribir el comando /newbot y siguir las instrucciones para crear un nuevo bot.
 Una vez creado, BotFather me da el token. Tengo que sustituir 'caca' en el código por el token proporcionado.
 '''
 
-TOKEN = 'caca' # Sustituir 'caca' por el token generado de BotFather
+TOKEN = '7962790436:AAGUg-KdspUYrpuK9aCPYxamXfuLOrA-jTI'
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
