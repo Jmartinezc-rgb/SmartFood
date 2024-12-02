@@ -34,7 +34,7 @@ async def handle_photo(update: Update, context):
     # Descargar la imagen enviada por Telegram
     photo = await update.message.photo[-1].get_file()
     photo_path = "file_0.jpg"
-    await photo.download_to_drive(photo_path)  # Corregido: Descarga la imagen al disco
+    await photo.download_to_drive(photo_path)  # Corregido: Descarga la imagen
 
     print(f"Imagen descargada: {photo_path}")
 

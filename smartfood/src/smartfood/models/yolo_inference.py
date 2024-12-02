@@ -26,7 +26,7 @@ async def handle_photo(update, context, yolo_model):
     
     print(f"Imagen descargada en: {photo_path}")
     
-    # Realizar la predicción con YOLOv8
+    # Realizar predicción con YOLOv8
     predictions = yolo_model.predict(photo_path)
     
     # Verificar si hay resultados
