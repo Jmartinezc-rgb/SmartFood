@@ -1,3 +1,12 @@
-aiogram
+# Frameworks y bibliotecas principales
 torch
 pillow
+aiogram
+
+# Nuevas dependencias añadidas
+datasets
+ultralytics  # Para YOLOv8
+python-telegram-bot  # Si decides usar este en lugar de aiogram
+
+# Utilidades adicionales
+opencv-python  # Para procesamiento de imágenes
