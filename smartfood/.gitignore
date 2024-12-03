@@ -8,9 +8,13 @@ __pycache__/
 
 # Pesos
 *.pt
+src/smartfood/models/yolov8x.pt
 
 # Ignorar caché de Hugging Face
 .cache/
+
+# Ignorar directorio de resultados del entrenamiento
+runs/
 
 # Ignorar carpetas generadas para datos
 data/
