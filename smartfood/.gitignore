@@ -13,8 +13,7 @@ __pycache__/
 .cache/
 
 # Ignorar carpetas generadas para datos
-data/train/
-data/validation/
+data/
 # Distribution / packaging
 .Python
 env/
