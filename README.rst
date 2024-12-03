@@ -59,6 +59,17 @@ Install the necessary dependencies by running the following command:
 
    pip install -r requirements.txt
 
+
+Dataset
+=======
+
+This project uses the dataset `FoodSeg103 <https://huggingface.co/datasets/EduardoPacheco/FoodSeg103>`_. To download it, make sure the dependencies are installed (see ``requirements.txt``) and execute:
+
+.. code-block:: bash
+
+    python src/smartfood/data_processing.py
+
+
 Features
 --------
 
