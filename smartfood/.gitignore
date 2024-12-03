@@ -6,6 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
+# Pesos
+*.pt
+
+# Ignorar caché de Hugging Face
+.cache/
+
+# Ignorar carpetas generadas para datos
+data/train/
+data/validation/
 # Distribution / packaging
 .Python
 env/
