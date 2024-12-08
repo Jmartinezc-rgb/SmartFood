@@ -1,5 +1,6 @@
-train: C:/Users/javim/OneDrive/Desktop/5º UNIVERSIDAD/TFG/SmartFood/data/train/images
-val: C:/Users/javim/OneDrive/Desktop/5º UNIVERSIDAD/TFG/SmartFood/data/validation/images
+train: /app/data/train/images
+val: /app/data/validation/images
+
 
 nc: 104
 

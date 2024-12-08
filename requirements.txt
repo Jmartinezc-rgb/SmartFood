@@ -1,12 +1,10 @@
-# Frameworks y bibliotecas principales
-torch
+torch==2.0.1
+torchvision
+ultralytics==8.0.50
+numpy==1.23.5
 pillow
-aiogram
-
-# Nuevas dependencias añadidas
+opencv-python
 datasets
-ultralytics  # Para YOLOv8
-python-telegram-bot  # Si decides usar este en lugar de aiogram
-
-# Utilidades adicionales
-opencv-python  # Para procesamiento de imágenes
+matplotlib
+scipy
+pandas
