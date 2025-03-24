@@ -1,0 +1,7 @@
+telegram
+ultralytics
+torch
+python-telegram-bot 
+transformers
+torchrec
+

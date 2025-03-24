@@ -1,124 +1,256 @@
+#!/usr/bin/env python3
+import logging
+import random
+
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from ultralytics import YOLO  # Importar YOLOv8
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ConversationHandler, ContextTypes, filters
+)
 
-# Inicializar el modelo YOLOv8
-yolo_model = YOLO("../models/yolov8x.pt") 
+# Si tienes un modelo YOLO
+from ultralytics import YOLO
+# Si tienes un modelo de recomendación (dummy o real)
+from models.recommend_model import RecommendModel
 
-# Función para el comando /start
-async def start(update: Update, context):
-    keyboard = [
-        [InlineKeyboardButton("Identificar Plato", callback_data='identify')],
-        [InlineKeyboardButton("Recomendación", callback_data='recommend')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Hola, ¿qué deseas hacer?", reply_markup=reply_markup)
+# Configurar logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Función para manejar las opciones del menú
-async def handle_option(update: Update, context):
+# ------------------------------------------------------------------
+# INICIALIZACIÓN DE MODELOS
+# ------------------------------------------------------------------
+yolo_model = YOLO("src/smartfood/models/yolov8x.pt") 
+recommend_model = RecommendModel("data/clean/recommendation_model.pth", interactions_path="data/clean/clean_interactions.csv")
+
+# Diccionario para almacenar datos temporales de usuarios
+user_data_store = {}
+
+# ------------------------------------------------------------------
+# ESTADOS DEL CUADRO DE CONVERSACIÓN
+# ------------------------------------------------------------------
+(
+    ASK_PREFERENCES,   # Estado para el cuestionario nutricional
+    CHOOSE_MODE,       # Estado para elegir entre "Detectar" o "Recomendar manual"
+) = range(2)
+
+# ------------------------------------------------------------------
+# LISTA DE CATEGORÍAS NUTRICIONALES
+# ------------------------------------------------------------------
+# Cada elemento es (clave_interno, etiqueta_pregunta)
+NUTRI_CATEGORIES = [
+    ("calories", "calorías"),
+    ("total_fat", "grasas totales"),
+    ("sugar", "azúcar"),
+    ("sodium", "sodio"),
+    ("protein", "proteína"),
+    ("saturated_fat", "grasas saturadas"),
+    ("carbs", "carbohidratos"),
+]
+
+# ------------------------------------------------------------------
+# MANEJO DE FLUJO PRINCIPAL
+# ------------------------------------------------------------------
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Mensaje de bienvenida y arranque directo del cuestionario.
+    """
+    await update.message.reply_text(
+        "¡Hola! Bienvenido/a a SmartFood Bot.\n"
+        "Primero vamos a hacerte unas preguntas sobre tus preferencias nutricionales."
+    )
+
+    # Inicializamos la estructura de preferencias y el índice de preguntas
+    context.user_data['preferences'] = {}
+    context.user_data['question_index'] = 0
+
+    # Llamamos a la función que hace la primera pregunta
+    return await ask_next_preference(update, context)
+
+async def ask_next_preference(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Función que pregunta por la siguiente categoría nutricional, o pasa al resumen si ya terminamos.
+    """
+    q_index = context.user_data['question_index']
+
+    if q_index < len(NUTRI_CATEGORIES):
+        # Aún hay preguntas por hacer
+        key, label = NUTRI_CATEGORIES[q_index]
+        await update.message.reply_text(
+            f"¿Cuál es tu preferencia en {label}? (bajo/normal/alto)"
+        )
+        return ASK_PREFERENCES
+    else:
+        # Ya preguntamos todo: construir el resumen
+        summary = "Resumen de tus preferencias:\n"
+        for k, v in context.user_data['preferences'].items():
+            summary += f"- {k}: {v}\n"
+
+        summary += "\nAhora, elige cómo quieres obtener tus recomendaciones:\n"
+        keyboard = [
+            [InlineKeyboardButton("Detectar ingredientes (foto)", callback_data='mode_detect')],
+            [InlineKeyboardButton("Introducir ingredientes manualmente", callback_data='mode_manual')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(summary, reply_markup=reply_markup)
+        return CHOOSE_MODE
+
+async def handle_preference_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Captura la respuesta del usuario y avanza a la siguiente pregunta o finaliza el cuestionario.
+    """
+    text = update.message.text.strip().lower()
+    q_index = context.user_data['question_index']
+
+    # Guardar la respuesta
+    if q_index < len(NUTRI_CATEGORIES):
+        key, _ = NUTRI_CATEGORIES[q_index]
+        context.user_data['preferences'][key] = text
+        context.user_data['question_index'] += 1
+
+    # Llamar de nuevo a ask_next_preference para la siguiente o terminar
+    return await ask_next_preference(update, context)
+
+async def handle_mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Recoge la elección del usuario (detectar ingredientes vs. introducir manualmente).
+    """
     query = update.callback_query
     await query.answer()
-    if query.data == 'identify':
-        print("Aquí actuaría YOLO para identificar el plato.")
-        keyboard = [[InlineKeyboardButton("Volver atrás", callback_data='back_to_start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Por favor, envía una imagen del plato a identificar.", reply_markup=reply_markup)
-    elif query.data == 'recommend':
-        print("Aquí el modelo generaría una recomendación.")
-        keyboard = [[InlineKeyboardButton("Volver atrás", callback_data='back_to_start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text("Te recomiendo el plato XXXXXXXXXX.", reply_markup=reply_markup)
+    mode = query.data
 
-# Función para manejar imágenes enviadas por el usuario
-async def handle_photo(update: Update, context):
-    # Descargar la imagen enviada por Telegram
-    photo = await update.message.photo[-1].get_file()
-    photo_path = "file_0.jpg"
-    await photo.download_to_drive(photo_path)  # Corregido: Descarga la imagen
+    if mode == 'mode_detect':
+        await query.message.reply_text("Por favor, envía una foto del plato para detectar ingredientes.")
+    elif mode == 'mode_manual':
+        await query.message.reply_text(
+            "Escribe los ingredientes separados por comas o deja vacío para usar solo tus preferencias."
+        )
+    return ConversationHandler.END
 
-    print(f"Imagen descargada: {photo_path}")
+# ------------------------------------------------------------------
+# MANEJO DE FOTO (DETECCIÓN DE INGREDIENTES)
+# ------------------------------------------------------------------
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Detecta ingredientes con YOLO y recomienda según preferencias + ingredientes detectados.
+    """
+    photo_file = await update.message.photo[-1].get_file()
+    photo_path = "src/smartfood/file_0.jpg"
+    await photo_file.download_to_drive(photo_path)
 
-    # Realizar la inferencia con YOLOv8
     results = yolo_model(photo_path)
+    detections = results[0].boxes
 
-    # Procesar los resultados manualmente
-    detections = results[0].boxes  # Acceder a las detecciones de la primera imagen
-    if detections is None or len(detections) == 0:
-        await update.message.reply_text("No pude identificar ningún plato en la imagen. Inténtalo de nuevo.")
+    if not detections or len(detections) == 0:
+        await update.message.reply_text("No pude identificar ingredientes en la imagen. Inténtalo de nuevo.")
         return
 
-    # Construir la respuesta con los resultados
-    response = "Identifiqué los siguientes elementos:\n"
+    detected_ing = []
+    response = "Identifiqué los siguientes ingredientes:\n"
     for box in detections:
-        cls = int(box.cls[0])  # Clase detectada
-        confidence = float(box.conf[0])  # Confianza de la detección
-        label = yolo_model.names[cls]  # Obtener el nombre de la clase
-        response += f"- {label} (Confianza: {confidence:.3f})\n"
+        cls = int(box.cls[0])
+        label = yolo_model.names[cls]
+        conf = float(box.conf[0])
+        response += f"- {label} (conf: {conf:.2f})\n"
+        detected_ing.append(label.strip().lower())
 
-    await update.message.reply_text(response)
+    # Obtener preferencias y generar recomendaciones
+    preferences = context.user_data.get('preferences', {})
+    recommendations = recommend_model.recommend(
+        user_id=random.randint(0, 99999),
+        preferences=preferences,
+        ingredients=detected_ing
+    )
 
-    # Preguntar al usuario si quiere una receta
-    keyboard = [
-        [InlineKeyboardButton("Sí, enviar receta", callback_data='send_recipe')],
-        [InlineKeyboardButton("No, gracias", callback_data='no_recipe')],
-        [InlineKeyboardButton("Volver atrás", callback_data='back_to_start')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("¿Quieres que te envíe la receta?", reply_markup=reply_markup)
+    if recommendations:
+        rec_text = "\nRecomendaciones basadas en tus preferencias + ingredientes detectados:\n"
+        for idx, rec in enumerate(recommendations, 1):
+            details = recommend_model.get_recipe_details(rec)
+            title = details.get('title', 'Desconocido')
+            rec_text += f"{idx}. {title}\n"
+    else:
+        rec_text = "\nLo siento, no pude generar recomendaciones en este momento."
 
-# Función para manejar la elección de receta
-async def handle_recipe_choice(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-    if query.data == 'send_recipe':
-        print("Aquí se enviaría la receta del plato identificado.")
-        keyboard = [[InlineKeyboardButton("Volver atrás", callback_data='back_to_start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(response + rec_text)
 
-        await query.message.reply_text(
-            "1. Calienta las tortillas en un comal o sartén durante 1-2 minutos por cada lado.\n"
-            "2. Cocina la carne (res, cerdo o pollo) en un sartén con sal y especias al gusto hasta que esté bien dorada.\n"
-            "3. Pica cebolla y cilantro fresco finamente para el aderezo.\n"
-            "4. Prepara una salsa con tomates, chiles, ajo y sal, y licúala hasta obtener una textura homogénea.\n"
-            "5. Coloca la carne cocida en el centro de las tortillas calientes.\n"
-            "6. Agrega cebolla, cilantro y un poco de salsa sobre la carne.\n"
-            "7. Sirve con una rodaja de limón y acompaña con tu bebida favorita.", 
-            reply_markup=reply_markup
-        )
-    elif query.data == 'no_recipe':
-        print("El usuario no quiere la receta.")
-        keyboard = [[InlineKeyboardButton("Volver atrás", callback_data='back_to_start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text(
-            "¡Entendido! Si necesitas algo más, no dudes en pedírmelo.",
-            reply_markup=reply_markup
-        )
+# ------------------------------------------------------------------
+# MANEJO DE INGREDIENTES MANUALES
+# ------------------------------------------------------------------
+async def process_manual_ingredients(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Toma los ingredientes escritos por el usuario y genera recomendaciones.
+    """
+    text = update.message.text.strip()
+    if not text:
+        ing_list = []
+    else:
+        ing_list = [ing.strip().lower() for ing in text.split(",")]
 
-# Función para manejar "Volver atrás"
-async def handle_back(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-    # Muestra nuevamente las opciones iniciales
-    keyboard = [
-        [InlineKeyboardButton("Identificar Plato", callback_data='identify')],
-        [InlineKeyboardButton("Recomendación", callback_data='recommend')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.reply_text("Hola, ¿qué deseas hacer?", reply_markup=reply_markup)
+    preferences = context.user_data.get('preferences', {})
+    recommendations = recommend_model.recommend(
+        user_id=random.randint(0, 99999),
+        preferences=preferences,
+        ingredients=ing_list
+    )
 
-# Inicialización del bot
+    if recommendations:
+        rec_text = "Recomendaciones basadas en tus preferencias y los ingredientes que ingresaste:\n"
+        for idx, rec in enumerate(recommendations, 1):
+            details = recommend_model.get_recipe_details(rec)
+            title = details.get('title', 'Desconocido')
+            rec_text += f"{idx}. {title}\n"
+    else:
+        rec_text = "Lo siento, no pude generar recomendaciones en este momento."
+
+    await update.message.reply_text(rec_text)
+
+# ------------------------------------------------------------------
+# CANCELAR
+# ------------------------------------------------------------------
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Operación cancelada.")
+    return ConversationHandler.END
+
+# ------------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------------
 def main():
-    app = ApplicationBuilder().token("8123112117:AAFUg_u4_jM2xjB1kuvww_XAcQ4Ohi08MZo").build()
-    
-    # Agregar manejadores
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_option, pattern='identify|recommend'))
-    app.add_handler(CallbackQueryHandler(handle_back, pattern='back_to_start'))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(CallbackQueryHandler(handle_recipe_choice, pattern='send_recipe|no_recipe'))
+    TOKEN = "8123112117:AAFUg_u4_jM2xjB1kuvww_XAcQ4Ohi08MZo"
 
-    print("Bot en ejecución...")
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # Conversación para el cuestionario
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ASK_PREFERENCES: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_preference_answer)
+            ],
+            CHOOSE_MODE: [
+                CallbackQueryHandler(handle_mode_choice, pattern='^(mode_detect|mode_manual)$')
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    # Handler para foto
+    photo_handler = MessageHandler(filters.PHOTO, handle_photo)
+    # Handler para ingredientes manuales
+    manual_ing_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, process_manual_ingredients)
+
+    app.add_handler(conv_handler)
+    app.add_handler(photo_handler)
+    app.add_handler(manual_ing_handler)
+
+    logger.info("Bot en ejecución...")
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
