@@ -1,87 +1,127 @@
-=========
+\=========
 SmartFood
 =========
 
-.. image:: https://img.shields.io/pypi/v/smartfood.svg
-   :target: https://pypi.python.org/pypi/smartfood
+.. image:: [https://img.shields.io/pypi/v/smartfood.svg](https://img.shields.io/pypi/v/smartfood.svg)
+\:target: [https://pypi.python.org/pypi/smartfood](https://pypi.python.org/pypi/smartfood)
 
-.. image:: https://img.shields.io/travis/Jmartinezc-rgb/smartfood.svg
-   :target: https://travis-ci.com/Jmartinezc-rgb/smartfood
+.. image:: [https://img.shields.io/travis/Jmartinezc-rgb/smartfood.svg](https://img.shields.io/travis/Jmartinezc-rgb/smartfood.svg)
+\:target: [https://travis-ci.com/Jmartinezc-rgb/smartfood](https://travis-ci.com/Jmartinezc-rgb/smartfood)
 
-.. image:: https://readthedocs.org/projects/smartfood/badge/?version=latest
-   :target: https://smartfood.readthedocs.io/en/latest/?version=latest
-   :alt: Documentation Status
+.. image:: [https://readthedocs.org/projects/smartfood/badge/?version=latest](https://readthedocs.org/projects/smartfood/badge/?version=latest)
+\:target: [https://smartfood.readthedocs.io/en/latest/?version=latest](https://smartfood.readthedocs.io/en/latest/?version=latest)
+\:alt: Documentation Status
 
-Nutritional Recommendation from Images
+# Recomendaciones nutricionales a partir de imágenes
 
-* Free software: Apache Software License 2.0
-* Documentation: https://smartfood.readthedocs.io
+* Software libre: Licencia Apache 2.0
+* Documentación: [https://smartfood.readthedocs.io](https://smartfood.readthedocs.io)
 
-Description
------------
+## Descripción
 
-SmartFood is a Telegram bot that provides nutritional recommendations based on images of food captured by a mobile device. This project is part of a Bachelor’s Thesis (TFG) titled "Nutritional Recommendation from Images". The main objective is to develop a system that offers nutritional information and/or recommendations (e.g., estimated calories or recipes) by processing food images. 
+**SmartFood** es un bot de Telegram que genera *recomendaciones de recetas* personalizadas a partir de **ingredientes detectados en una foto** o introducidos manualmente por el usuario. El proyecto forma parte del Trabajo Fin de Grado *“Nutritional Recommendation from Images”*.
 
-The bot serves as the user interface, enabling interaction through Telegram by exchanging messages and photos.
+En esta iteración se ha desplegado la solución **completamente en Google Cloud** usando una arquitectura *serverless* basada en **Cloud Functions + Pub/Sub**:
 
-Project Objectives
-------------------
+```
+Telegram ▶ Webhook ─┐                  ┌─▶ Mensajero ▶ Telegram
+                    │                  │
+              Pub/Sub topic ▶ Recomendador
+                    │
+          YOLOv8 Detector (opcional)
+```
 
-The system is designed to:
-- Offer recommendations and nutritional information based on food images.
-- Use Transfer Learning on pretrained architectures to identify foods.
-- Integrate with messaging systems (Telegram API) for real-time communication with users.
-- Explore production deployment using container orchestration tools like Docker or Kubernetes.
+1. **Webhook** (HTTP)   → Guarda preferencias en Firestore y publica los ingredientes.
+2. **Recomendador** (Pub/Sub)   → PyKEEN + KG: infiere recetas con filtros multi‑nutriente.
+3. **Mensajero** (Pub/Sub)   → Formatea la respuesta y la envía a Telegram.
+4. **Detector** (HTTP, opcional)   → YOLOv8 "best.pt" detecta ingredientes en imágenes.
 
-For more details, refer to the TFG project document included in the repository.
+El *pipeline* es 100 % asíncrono; cada función escala de forma independiente.
 
-Code Structure
---------------
+## Objetivos del proyecto
 
-### Main Files
-- `nutri_bot.py`: Main script of the bot, including interaction logic and placeholder sections for integrating the Transfer Learning model.
+* Detectar ingredientes en imágenes mediante Transfer Learning (YOLOv8).
+* Recomendar platos equilibrados usando un Grafo de Conocimiento y PyKEEN.
+* Permitir que el usuario seleccione sus preferencias nutricionales (calorías, grasas, azúcares, etc.) y el modo de entrada (texto o foto).
+* Desplegar la solución en la nube minimizando el *vendor lock‑in* y los costes.
 
-Requirements
-------------
+## Estructura del código
 
-This project requires:
-- Python 3.7 or higher
-- `aiogram <https://pypi.org/project/aiogram/>`_
-- `Pillow <https://pypi.org/project/Pillow/>`_
-- `Torch <https://pypi.org/project/torch/>`_ (for future model integration)
+```
+SmartFood-pubsub/
+├─ deploy.sh            # Script de despliegue (gcloud)
+├─ webhook/             # Cloud Function – Telegram ↔ Pub/Sub
+├─ recomendador/        # Cloud Function – PyKEEN KG inference
+├─ mensajero/           # Cloud Function – Pub/Sub ↔ Telegram
+├─ detector/            # (opcional) Cloud Function – YOLOv8 inference
+└─ notebooks/           # Experimentos y prototipos (no se despliegan)
+```
 
-Installation
-------------
+La carpeta **`SmartFood-pubsub`** es la que se sube a Google Cloud. Los *notebooks* se conservan para replicar los experimentos de entrenamiento y análisis.
 
-Install the necessary dependencies by running the following command:
+## Requisitos
+
+* Python 3.10
+* `ultralytics` (YOLOv8) / `torch>=2.1, <2.5`
+* `pykeen==1.10.2`, `pandas`, `google-cloud-firestore`, `google-cloud-pubsub`, `google-cloud-storage`, `functions-framework`
+* `gcloud CLI` configurado con un proyecto y cuenta de servicio con permisos **Cloud Functions + Pub/Sub + Firestore**.
+
+## Instalación local (desarrollo)
 
 .. code-block:: bash
 
-   pip install -r requirements.txt
+git clone [https://github.com/Jmartinezc-rgb/smartfood.git](https://github.com/Jmartinezc-rgb/smartfood.git)
+cd smartfood/SmartFood-pubsub
+python -m venv .venv && source .venv/bin/activate
+pip install -r recomendador/requirements.txt
 
+Variables de entorno mínimas:
 
-Dataset
-=======
+* `BOT_TOKEN`         → token del bot de Telegram.
+* `MODEL_BUCKET`      → bucket con *model.pkl* y *triples.csv*.
 
-This project uses the dataset `FoodSeg103 <https://huggingface.co/datasets/EduardoPacheco/FoodSeg103>`_. To download it, make sure the dependencies are installed (see ``requirements.txt``) and execute:
+## Despliegue en Google Cloud
+
+Se automatiza con `deploy.sh`:
 
 .. code-block:: bash
 
-    python src/smartfood/data_processing.py
+./deploy.sh   # crea topics, sube código y fija el webhook
 
+El script:
 
-Features
---------
+* Crea los topics **`ingredientes_detectados`** y **`mensaje_respuesta`**.
+* Despliega cada función Gen2 con **gcloud functions deploy**.
+* Sube las variables de entorno necesarias.
+* Registra el webhook de Telegram.
 
-- Nutritional information extraction from food images (future development).
-- Real-time user interaction through Telegram API.
-- Potential integration with Transfer Learning models for food recognition.
-- Deployment-ready structure with Docker and Kubernetes support (optional).
+## Modelo YOLOv8
 
-Credits
--------
+El detector se entrenó durante **100 epochs** sobre un subconjunto de 80 ingredientes — `best.pt` (≈52 MB). Para publicarlo:
 
-This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
+.. code-block:: bash
 
-.. _Cookiecutter: https://github.com/audreyr/cookiecutter
-.. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
+gsutil cp runs/detect/yolov8\_ingredientes/weights/best.pt&#x20;
+gs\://smartfood-models/yolo/best.pt
+
+Luego desplegar la función `detector/` pasándole `YOLO_MODEL_BLOB=yolo/best.pt`.
+
+# Dataset
+
+*Detección*: conjunto propio + imágenes etiquetadas manualmente.
+
+*Recomendación*: triples en `kge/new_triplets20_optimized.csv` y grafo entrenado con PyKEEN.
+
+## Características destacadas
+
+* Detección de ingredientes en **127 ms/img** (CPU en Cloud Run) con YOLOv8‑n.
+* Recomendador explica preferencias multi‑nutriente sumando scores relacionales.
+* Arquitectura *event‑driven* sin servidores; sólo se paga por invocación.
+* Fácil de extender (nuevos filtros, nuevos modelos, nuevos canales de chat).
+
+## Créditos
+
+Creado con `Cookiecutter`\_ y la plantilla `audreyr/cookiecutter‑pypackage`\_.
+
+.. \_Cookiecutter: [https://github.com/audreyr/cookiecutter](https://github.com/audreyr/cookiecutter)
+.. \_audreyr/cookiecutter‑pypackage: [https://github.com/audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter-pypackage)
