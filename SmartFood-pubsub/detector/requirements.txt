@@ -1,0 +1,5 @@
+ultralytics==8.3.85  
+google-cloud-storage==2.16.0
+google-cloud-pubsub==2.21.0
+functions-framework==3.5.0
+requests==2.32.4
